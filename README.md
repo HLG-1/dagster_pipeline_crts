@@ -127,6 +127,101 @@ dagster_pipeline_crts/
 
 ---
 
+## Installation sur un nouveau PC
+
+### Prérequis
+- GPU NVIDIA avec ≥ 12 GB VRAM (recommandé)
+- CUDA 12.x ou 13.0
+- Docker Engine ≥ 24
+- Docker Compose ≥ 2.20
+- NVIDIA Container Toolkit
+- Git
+
+### Étape 1 · Cloner le dépôt
+```bash
+git clone https://github.com/HLG-1/dagster_pipeline_crts.git
+cd dagster_pipeline_crts
+```
+
+### Étape 2 · Installer les dépendances système (Linux/Ubuntu)
+```bash
+# Mise à jour du système
+sudo apt update && sudo apt upgrade -y
+
+# Installer Docker et Docker Compose
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker $USER
+
+# Installer NVIDIA Container Toolkit
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+sudo apt update && sudo apt install -y nvidia-container-toolkit
+sudo systemctl restart docker
+```
+
+### Étape 3 · Télécharger les modèles de poids
+```bash
+# Créer les dossiers nécessaires
+mkdir -p checkpoints/yolo11
+mkdir -p sam3_logs/building_ft_seg/checkpoints
+
+# Télécharger le modèle YOLO 11 (~53 MB)
+# Placer le fichier best.pt dans checkpoints/yolo11/best.pt
+# (Contactez l'équipe pour obtenir le modèle fine-tuné)
+
+# Télécharger le modèle SAM 3 (~9.4 GB)
+# Placer le fichier sam3.pt dans sam3_logs/building_ft_seg/checkpoints/sam3.pt
+# (Contactez l'équipe pour obtenir le checkpoint)
+```
+
+### Étape 4 · Configurer l'environnement
+```bash
+# Copier le fichier d'exemple
+cp .env.example .env
+
+# Éditer .env pour configurer les variables
+nano .env
+```
+
+Variables importantes dans `.env` :
+- `HF_TOKEN=your_hugging_face_token_here` (si nécessaire pour SAM3)
+- `SAM3_DEVICE=cuda` (ou `cpu` si pas de GPU)
+- `SAM3_DTYPE=float16` (ou `float32` pour plus de précision)
+- `SAM3_URL=http://127.0.0.1:8077` (ou `http://sam3:8077` dans Docker)
+- `YOLO_WEIGHTS_PATH=checkpoints/yolo11/best.pt`
+
+### Étape 5 · Construire et démarrer les conteneurs
+```bash
+# Construction des images Docker
+docker compose build
+
+# Démarrage en arrière-plan
+docker compose up -d
+
+# Vérifier l'état
+docker compose ps
+```
+
+### Étape 6 · Vérifier les services
+```bash
+# Vérifier le micro-service SAM3
+curl http://localhost:8077/health
+
+# Vérifier Dagster webserver
+curl http://localhost:3000
+```
+
+### Étape 7 · Lancer le pipeline
+1. Ouvrir le navigateur sur **http://localhost:3000**
+2. Naviguer vers **Assets** → Groupe `pipeline_batiments`
+3. Cliquer sur **Materialize all** pour lancer le pipeline complet
+4. Placer une orthophoto GeoTIFF dans `data/incoming/`
+5. Le sensor détectera automatiquement le fichier et lancera le pipeline
+
+---
+
 ## Installation et Lancement (Docker Compose)
 
 ### 1 · Vérifier les fichiers de poids
