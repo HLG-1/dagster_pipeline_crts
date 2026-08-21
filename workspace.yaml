@@ -1,0 +1,5 @@
+# Indique a Dagster ou trouver les Definitions (assets, resources, jobs).
+# Documentation : https://docs.dagster.io/guides/deploy/code-locations
+
+load_from:
+  - module_name: pipeline_batiments.definitions

@@ -1,0 +1,112 @@
+version: "3.8"
+
+services:
+  # 1. Micro-service SAM3 (Segmentation GPU - NVIDIA L40s)
+  sam3:
+    build:
+      context: .
+      dockerfile: services/sam3_service/Dockerfile
+    container_name: sam3-service
+    restart: unless-stopped
+    ports:
+      - "8077:8077"
+    environment:
+      - SAM3_HOST=0.0.0.0
+      - SAM3_PORT=8077
+      - SAM3_DEVICE=cuda
+      - SAM3_DTYPE=float16
+      # Poids de base SAM3 (sam3.pt dans le dossier checkpoints du fine-tune)
+      - SAM3_CHECKPOINT=/app/sam3_ckpt/sam3.pt
+      # Pas de checkpoint FT separe : sam3.pt est deja le modele final
+      - SAM3_FT_CHECKPOINT=
+      - SAM3_USE_FT=0
+      - SAM3_LABEL=building_ft_seg
+      - HF_TOKEN=${HF_TOKEN:-}
+      # Eviter tout telechargement Hugging Face (poids locaux fournis)
+      - TRANSFORMERS_OFFLINE=1
+      - HF_DATASETS_OFFLINE=1
+    volumes:
+      # Monte le dossier contenant sam3.pt (lecture seule)
+      - ./sam3_logs/building_ft_seg/checkpoints:/app/sam3_ckpt:ro
+      - sam3_hf_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8077/health"]
+      interval: 20s
+      timeout: 15s
+      retries: 6
+      start_period: 120s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # 2. Dagster Webserver (Interface graphique port 3000)
+  dagster-webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dagster-webserver
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DAGSTER_HOME=/app/.dagster_home
+      - SAM3_URL=http://sam3:8077
+      # Chemin DANS le conteneur (volume monte ci-dessous)
+      - YOLO_WEIGHTS_PATH=/app/checkpoints/yolo11/best.pt
+      - OUTPUT_DIR=results
+      - PIPELINE_CONFIG_PATH=config/pipeline.yaml
+      - PYTHONUNBUFFERED=1
+    command: dagster-webserver -h 0.0.0.0 -p 3000 -w workspace.yaml
+    volumes:
+      - ./.dagster_home:/app/.dagster_home
+      - ./checkpoints:/app/checkpoints:ro
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./config:/app/config
+    depends_on:
+      sam3:
+        # Attend que le health-check reponde ready:true (le modele met ~1-2 min
+        # a charger sur L40s avec sam3.pt ~9.4 GB).
+        condition: service_healthy
+
+  # 3. Dagster Daemon (execution des runs + sensors — c'est LUI qui appelle YOLO/SAM3)
+  dagster-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dagster-daemon
+    restart: unless-stopped
+    environment:
+      - DAGSTER_HOME=/app/.dagster_home
+      - SAM3_URL=http://sam3:8077
+      - YOLO_WEIGHTS_PATH=/app/checkpoints/yolo11/best.pt
+      - OUTPUT_DIR=results
+      - PIPELINE_CONFIG_PATH=config/pipeline.yaml
+      - PYTHONUNBUFFERED=1
+    command: dagster-daemon run
+    volumes:
+      - ./.dagster_home:/app/.dagster_home
+      - ./checkpoints:/app/checkpoints:ro
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./config:/app/config
+    depends_on:
+      sam3:
+        condition: service_healthy
+      dagster-webserver:
+        condition: service_started
+    # YOLO tourne dans le daemon — GPU pour accelerer la detection
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  sam3_hf_cache:

@@ -1,0 +1,41 @@
+[project]
+name = "pipeline-batiments"
+version = "0.1.0"
+description = "Orchestration Dagster - extraction, regularisation et vectorisation d'empreintes de bâtiments"
+requires-python = ">=3.10"
+dependencies = [
+    "dagster",
+    "dagster-webserver",
+    "rasterio",
+    "geopandas",
+    "shapely",
+    "pyproj",
+    "pyyaml",
+    "numpy",
+    "scipy",
+    "scikit-image",
+    "matplotlib",
+    "pillow",
+    "opencv-python-headless",
+    "pydantic",
+    "ultralytics",
+    "python-dotenv",
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.dagster]
+module_name = "pipeline_batiments.definitions"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

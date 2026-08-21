@@ -1,0 +1,20 @@
+# @package _global_
+# Smoke test rapide du fine-tuning SAM 3 (40 images, 1 epoch, sans val).
+defaults:
+  - building_ft_local
+  - _self_
+
+building_train:
+  num_images: 40
+
+scratch:
+  num_train_workers: 2
+  gradient_accumulation_steps: 1
+
+trainer:
+  max_epochs: 1
+  val_epoch_freq: 999
+  skip_first_val: True
+
+launcher:
+  experiment_log_dir: /home/yassine/Bureau/finetunig/finetunig/sam3_logs/building_smoke

@@ -1,0 +1,45 @@
+# Environnements virtuels
+.venv/
+.venv*/
+venv/
+env/
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+
+# Fichiers d'environnement et secrets
+.env
+
+# Runtime & temporaires Dagster
+.dagster_home/
+.dagster_home*/
+.tmp_dagster_home*/
+
+# Donnees d'entree et de sortie du pipeline
+data/incoming/*
+!data/incoming/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+results/*
+!results/.gitkeep
+
+# Checkpoints et poids lourds
+checkpoints/**/*.pt
+sam3_weights/*.pt
+sam3_logs/
+finetunig_portable/
+zone3/
+
+# Images / donnees volumineuses
+*.tif
+*.tiff
+*.png
+*.jpg
+*.jpeg
+*.geojson
+*.gpkg

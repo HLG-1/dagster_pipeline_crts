@@ -1,0 +1,8 @@
+# Dépendances du micro-service (env conda `sam3` uniquement)
+# PyTorch + sam3 officiel : installés par scripts/install_sam3_meta.sh
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0
+opencv-python-headless>=4.9.0
+Pillow>=10.3.0
+numpy>=1.26.0

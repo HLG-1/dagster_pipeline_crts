@@ -1,0 +1,42 @@
+# Parametres du pipeline, charges par les resources / assets.
+# Rien ici ne doit etre un chemin absolu machine-specifique (cf cahier des charges).
+
+tuilage:
+  tile_size: 512
+  overlap: 64
+
+yolo:
+  conf_threshold: 0.20
+  weights_path: checkpoints/yolo11/best.pt
+
+sam3:
+  url: http://127.0.0.1:8077
+  timeout_s: 300
+  max_retries: 3
+  backoff_s: 5
+
+regularization:
+  enabled: false
+  method: none  # rectfit | topology | none
+  simplify_tolerance: 0.5
+  min_area_px: 50
+
+fusion:
+  min_area_px: 50
+  iou_merge_threshold: 0.5
+
+export:
+  formats: [geojson, gpkg, shapefile, mask_png, overlay_png]
+  output_dir: results
+  overlay:
+    alpha: 0.48
+    fill_color: "#F97316"
+    line_color: "#EF4444"
+    line_thickness: 2
+
+sensor:
+  watch_dir: data/incoming
+  poll_interval_s: 30
+
+input:
+  path: data/incoming/01.tif

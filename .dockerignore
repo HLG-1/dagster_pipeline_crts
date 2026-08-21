@@ -1,0 +1,23 @@
+.git
+.gitignore
+.venv*
+.dagster_home
+.tmp_dagster_home*
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+results/*
+!results/.gitkeep
+data/incoming/*
+!data/incoming/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+# Poids lourds — montes en volumes, jamais copies dans les images
+sam3_weights/
+sam3_logs/
+checkpoints/
+runs/
+# Env local
+.env
