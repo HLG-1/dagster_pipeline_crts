@@ -6,7 +6,7 @@ tuilage:
   overlap: 64
 
 yolo:
-  conf_threshold: 0.20
+  conf_threshold: 0.15
   weights_path: checkpoints/yolo11/best.pt
 
 sam3:
@@ -14,6 +14,7 @@ sam3:
   timeout_s: 300
   max_retries: 3
   backoff_s: 5
+  sep: per_box
 
 regularization:
   enabled: false
@@ -39,4 +40,4 @@ sensor:
   poll_interval_s: 30
 
 input:
-  path: data/incoming/01.tif
+  path: data/incoming/03.tif

@@ -20,7 +20,7 @@ class YOLOResource(ConfigurableResource):
     """
 
     weights_path: str
-    conf_threshold: float = 0.20
+    conf_threshold: float = 0.15
     iou_threshold: float = 0.45
 
     _detector: object = PrivateAttr(default=None)
@@ -48,14 +48,17 @@ class YOLOResource(ConfigurableResource):
             model=self.weights_path,
             use_finetuned=True,          # utilise best_weights en priorité
             detection_only=not is_seg,   # False si le modèle est bien un modèle segment
-            infer_imgsz=1024,            # correspond à la taille réelle des tuiles
+            infer_imgsz=512,             # correspond à la taille utilisée dans le script de test
+            conf=self.conf_threshold,    # utilise le seuil de confiance depuis la config
+            iou=self.iou_threshold,      # utilise le seuil IOU depuis la config
         )
         cfg.device = resolved_device()
         self._detector = YOLODetector(cfg)
         log.info(
             f"Modele YOLO charge depuis {self.weights_path} "
             f"(device={cfg.device}, task={real_task}, "
-            f"detection_only={cfg.detection_only}, infer_imgsz=1024)"
+            f"detection_only={cfg.detection_only}, infer_imgsz={cfg.infer_imgsz}, "
+            f"conf={cfg.conf}, iou={cfg.iou})"
         )
 
     def detect(self, rgb: np.ndarray) -> dict:
@@ -68,3 +71,10 @@ class YOLOResource(ConfigurableResource):
         return self._detector.detect_instances(
             rgb, conf=self.conf_threshold, iou=self.iou_threshold
         )
+
+    def detect_instances(self, rgb: np.ndarray) -> dict:
+        """Alias de detect() pour compatibilité avec le pipeline Dagster.
+        
+        Renvoie {"boxes_xyxy": [[x1,y1,x2,y2], ...], "instances": <masques natifs>}.
+        """
+        return self.detect(rgb)

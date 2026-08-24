@@ -43,7 +43,7 @@ services:
               count: all
               capabilities: [gpu]
 
-  # 2. Dagster Webserver (Interface graphique port 3000)
+  # 2. Dagster Webserver (Interface graphique port 3001)
   dagster-webserver:
     build:
       context: .
@@ -51,7 +51,7 @@ services:
     container_name: dagster-webserver
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       - DAGSTER_HOME=/app/.dagster_home
       - SAM3_URL=http://sam3:8077
@@ -63,6 +63,7 @@ services:
     command: dagster-webserver -h 0.0.0.0 -p 3000 -w workspace.yaml
     volumes:
       - ./.dagster_home:/app/.dagster_home
+      - ./src:/app/src
       - ./checkpoints:/app/checkpoints:ro
       - ./data:/app/data
       - ./results:/app/results
@@ -90,6 +91,7 @@ services:
     command: dagster-daemon run
     volumes:
       - ./.dagster_home:/app/.dagster_home
+      - ./src:/app/src
       - ./checkpoints:/app/checkpoints:ro
       - ./data:/app/data
       - ./results:/app/results

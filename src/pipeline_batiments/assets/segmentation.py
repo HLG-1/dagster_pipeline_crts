@@ -6,12 +6,17 @@ Pour chaque tuile : point interieur par boite (multiprompt), appel SAM3
 immediate en polygones (coords monde, via le transform de la fenetre).
 La fusion inter-tuiles (etape 05) travaille sur ces polygones deja
 georeferences.
+
+Mise a jour : Mode hybride YOLO+SAM3 avec sep="per_box" (multiprompt
+boites + points centroids vers predict_inst de SAM3), filtrage de surface
+minimale, et repli sur les masques natifs YOLO en cas d'indisponibilité.
 """
 from __future__ import annotations
 
 import os
 import yaml
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from dagster import asset
 from rasterio.windows import Window
@@ -45,6 +50,9 @@ def polygones_par_tuile(
     simplify_tol = float(reg_cfg.get("simplify_tolerance", 0.5))
     min_area_px = int(reg_cfg.get("min_area_px", 50))
 
+    sam3_cfg = cfg.get("sam3", {})
+    sep_mode = str(sam3_cfg.get("sep", "per_box"))
+
     sam3_ok = sam3.health_check()
     if not sam3_ok:
         context.log.warning(
@@ -69,15 +77,29 @@ def polygones_par_tuile(
             rgb = read_window_rgb(path, window)
             points = points_for_boxes(rgb, boxes)
             try:
+                # Utiliser "per_box" pour segmenter précisément chaque boîte YOLO avec SAM3
                 label, _meta = sam3.predict_instances(
-                    rgb, boxes_xyxy=boxes, points_xy=points, sep="per_box",
+                    rgb, boxes_xyxy=boxes, points_xy=points, sep=sep_mode,
                 )
+                
+                # Filtrer les petites surfaces après SAM3
+                if int(label.max()) > 0:
+                    out_label = np.zeros_like(label)
+                    nid = 0
+                    for lab in range(1, int(label.max()) + 1):
+                        m = label == lab
+                        if m.sum() >= min_area_px:
+                            nid += 1
+                            out_label[m] = nid
+                    label = out_label
+                    context.log.info(f"Tuile {i + 1} : SAM3 {int(label.max())} instances après filtrage (min_area={min_area_px}px, sep={sep_mode})")
             except Exception as exc:
                 context.log.warning(f"Tuile {i + 1} : echec SAM3 ({exc}), repli sur YOLO segment")
                 label = None
 
         if (label is None or int(label.max()) == 0) and native_inst is not None and int(native_inst.max()) > 0:
             label = native_inst
+            context.log.info(f"Tuile {i + 1} : Repli YOLO natif ({int(label.max())} instances)")
 
         if label is None or int(label.max()) == 0:
             continue

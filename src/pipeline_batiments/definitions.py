@@ -50,7 +50,7 @@ defs = Definitions(
             weights_path=os.environ.get(
                 "YOLO_WEIGHTS_PATH", _cfg.get("yolo", {}).get("weights_path", "checkpoints/yolo11/best.pt")
             ),
-            conf_threshold=_cfg.get("yolo", {}).get("conf_threshold", 0.20),
+            conf_threshold=_cfg.get("yolo", {}).get("conf_threshold", 0.15),
         ),
     },
 )
