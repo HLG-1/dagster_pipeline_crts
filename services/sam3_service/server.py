@@ -68,19 +68,21 @@ def _resolve_device() -> torch.device:
 def _resolve_dtype(dev: torch.device) -> torch.dtype:
     if dev.type != "cuda":
         return torch.float32
-    m = (SAM3_DTYPE or "float32").lower()
+    m = (SAM3_DTYPE or "bfloat16").lower()
     if m in ("bf16", "bfloat16"):
-        return torch.bfloat16
-    if m == "float32":
+        if hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported():
+            return torch.bfloat16
         return torch.float32
-    return torch.float16
+    if m in ("fp16", "float16", "half"):
+        return torch.float16
+    return torch.float32
 
 
 def _merge_finetune_checkpoint(model: torch.nn.Module, ckpt_path: str) -> dict[str, Any]:
-    """Fusionne un checkpoint trainer (building_ft) sur un modèle HF complet.
+    """Fusionne un checkpoint trainer (building_ft / building_ft_seg) sur un modèle complet.
 
     Le FT local n'entraîne que backbone / transformer / geometry / scoring
-    (pas de tête interactive ni segmentation). On charge donc HF + overlay.
+    (pas de tête interactive ni segmentation). On charge donc base + overlay.
     """
     path = Path(ckpt_path)
     if not path.is_file():
@@ -114,10 +116,10 @@ def _merge_finetune_checkpoint(model: torch.nn.Module, ckpt_path: str) -> dict[s
 
 
 def _fix_dtype_hooks(model: torch.nn.Module) -> int:
-    """Aligne le dtype des activations sur celui des poids (évite bf16/fp32 mix)."""
+    """Aligne le dtype des activations sur celui des poids (évite bf16/fp32 mix hors autocast)."""
 
     def _pre_hook(mod: torch.nn.Module, args: tuple):
-        if not args:
+        if not args or torch.is_autocast_enabled():
             return args
         x = args[0]
         w = getattr(mod, "weight", None)
@@ -174,26 +176,39 @@ def _load_model() -> None:
         "enable_inst_interactivity": True,
         "enable_segmentation": True,
     }
-    # Poids de base : fichier local si disponible, sinon init sans checkpoint.
+
     base_ckpt = (SAM3_CHECKPOINT or "").strip()
-    if base_ckpt:
+    if base_ckpt and Path(base_ckpt).is_file():
         kwargs["checkpoint_path"] = base_ckpt
         kwargs["load_from_HF"] = False
+        log.info("Utilisation checkpoint local : %s", base_ckpt)
     else:
-        kwargs["load_from_HF"] = False
+        is_offline = os.environ.get("TRANSFORMERS_OFFLINE", "0").lower() in ("1", "true", "yes")
+        if not is_offline:
+            kwargs["load_from_HF"] = True
+            log.info("Chargement des poids de base depuis Hugging Face (%s)", SAM3_HF_REPO)
+        else:
+            kwargs["load_from_HF"] = False
+            log.warning("Mode offline sans checkpoint de base valide (%s)", base_ckpt)
 
     try:
         model = build_sam3_image_model(**kwargs)
-    except FileNotFoundError as exc:
-        log.warning("Checkpoint local introuvable, démarrage sans poids pré-entraînés : %s", exc)
+    except Exception as exc:
+        log.warning("Échec build_sam3_image_model initial (%s) — repli sans checkpoint de base", exc)
         kwargs.pop("checkpoint_path", None)
         kwargs["load_from_HF"] = False
         model = build_sam3_image_model(**kwargs)
+
     if _exit_leaked_bf16_autocast(model):
         log.info("bf16_context tracker désactivé (mode concept float32 OK)")
-    if ft_path:
-        info = _merge_finetune_checkpoint(model, ft_path)
-        _LOADED_FT = info.get("path") or ft_path
+
+    if ft_path and Path(ft_path).is_file():
+        try:
+            info = _merge_finetune_checkpoint(model, ft_path)
+            _LOADED_FT = info.get("path") or ft_path
+        except Exception as exc:
+            log.exception("Erreur lors de la fusion du checkpoint fine-tuné : %s", exc)
+            _LOADED_FT = None
     else:
         _LOADED_FT = None
 
@@ -205,8 +220,8 @@ def _load_model() -> None:
     _MODEL = model
     _PROCESSOR = Sam3Processor(model)
     log.info(
-        "SAM3 prêt sur %s (variant=%s, weights=float32, dtype_hooks=%s, autocast=%s)",
-        _DEVICE, SAM3_LABEL, n_hooks, torch.is_autocast_enabled(),
+        "SAM3 prêt sur %s (variant=%s, ft=%s, weights=float32, dtype_hooks=%s, autocast=%s)",
+        _DEVICE, SAM3_LABEL, _LOADED_FT or "(base)", n_hooks, torch.is_autocast_enabled(),
     )
 
 

@@ -14,15 +14,14 @@ services:
       - SAM3_HOST=0.0.0.0
       - SAM3_PORT=8077
       - SAM3_DEVICE=cuda
-      - SAM3_DTYPE=float16
-      # Poids de base SAM3 (sam3.pt dans le dossier checkpoints du fine-tune)
+      - SAM3_DTYPE=bfloat16
+      # Poids locaux montes depuis le dossier checkpoints
       - SAM3_CHECKPOINT=/app/sam3_ckpt/sam3.pt
-      # Pas de checkpoint FT separe : sam3.pt est deja le modele final
-      - SAM3_FT_CHECKPOINT=
-      - SAM3_USE_FT=0
+      - SAM3_FT_CHECKPOINT=/app/sam3_ckpt/sam3.pt
+      - SAM3_USE_FT=1
       - SAM3_LABEL=building_ft_seg
       - HF_TOKEN=${HF_TOKEN:-}
-      # Eviter tout telechargement Hugging Face (poids locaux fournis)
+      # Mode offline avec poids locaux
       - TRANSFORMERS_OFFLINE=1
       - HF_DATASETS_OFFLINE=1
     volumes:

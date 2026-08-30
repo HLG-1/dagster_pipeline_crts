@@ -7,7 +7,16 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+def _find_root() -> Path:
+    p = Path(__file__).resolve().parent
+    for _ in range(5):
+        if (p / "checkpoints").is_dir() or (p / "workspace.yaml").is_file() or (p / "config").is_dir():
+            return p
+        p = p.parent
+    return Path(__file__).resolve().parents[2]
+
+
+ROOT = _find_root()
 
 
 def load_dotenv() -> None:

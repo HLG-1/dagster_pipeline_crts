@@ -6,7 +6,8 @@ tuilage:
   overlap: 64
 
 yolo:
-  conf_threshold: 0.15
+  conf_threshold: 0.20
+  iou_threshold: 0.45
   weights_path: checkpoints/yolo11/best.pt
 
 sam3:
