@@ -1,0 +1,21 @@
+resources:
+  sam3:
+    config:
+      url: http://sam3:8077
+      timeout_s: 300
+      max_retries: 3
+      backoff_s: 5
+  yolo:
+    config:
+      weights_path: /app/checkpoints/yolo11/best.pt
+      conf_threshold: 0.20
+      iou_threshold: 0.45
+
+ops:
+  orthophoto_meta:
+    config:
+      input_path: /app/data/incoming/zone1_00007_IMG.png
+  fenetres_tuiles:
+    config:
+      tile_size: 512
+      overlap: 64

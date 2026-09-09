@@ -1,0 +1,4 @@
+ops:
+  orthophoto_meta:
+    config:
+      input_path: data/incoming/zone1_00007_IMG.png
