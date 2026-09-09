@@ -27,6 +27,7 @@ services:
     volumes:
       # Monte le dossier contenant sam3.pt (lecture seule)
       - ./sam3_logs/building_ft_seg/checkpoints:/app/sam3_ckpt:ro
+      - ./services:/app/services:ro
       - sam3_hf_cache:/root/.cache/huggingface
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8077/health"]
@@ -58,6 +59,7 @@ services:
       - YOLO_WEIGHTS_PATH=/app/checkpoints/yolo11/best.pt
       - OUTPUT_DIR=results
       - PIPELINE_CONFIG_PATH=config/pipeline.yaml
+      - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
     command: dagster-webserver -h 0.0.0.0 -p 3000 -w workspace.yaml
     volumes:
@@ -86,6 +88,7 @@ services:
       - YOLO_WEIGHTS_PATH=/app/checkpoints/yolo11/best.pt
       - OUTPUT_DIR=results
       - PIPELINE_CONFIG_PATH=config/pipeline.yaml
+      - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
     command: dagster-daemon run
     volumes:

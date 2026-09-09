@@ -178,18 +178,18 @@ def _load_model() -> None:
     }
 
     base_ckpt = (SAM3_CHECKPOINT or "").strip()
-    if base_ckpt and Path(base_ckpt).is_file():
+    if base_ckpt and Path(base_ckpt).is_file() and base_ckpt != ft_path:
         kwargs["checkpoint_path"] = base_ckpt
         kwargs["load_from_HF"] = False
         log.info("Utilisation checkpoint local : %s", base_ckpt)
     else:
         is_offline = os.environ.get("TRANSFORMERS_OFFLINE", "0").lower() in ("1", "true", "yes")
-        if not is_offline:
+        if not is_offline and not ft_path:
             kwargs["load_from_HF"] = True
             log.info("Chargement des poids de base depuis Hugging Face (%s)", SAM3_HF_REPO)
         else:
             kwargs["load_from_HF"] = False
-            log.warning("Mode offline sans checkpoint de base valide (%s)", base_ckpt)
+            log.info("Mode local/offline sans checkpoint de base Hugging Face")
 
     try:
         model = build_sam3_image_model(**kwargs)
@@ -205,7 +205,8 @@ def _load_model() -> None:
     if ft_path and Path(ft_path).is_file():
         try:
             info = _merge_finetune_checkpoint(model, ft_path)
-            _LOADED_FT = info.get("path") or ft_path
+            _LOADED_FT = str(info.get("path", ft_path))
+            log.info("Chemin FT chargé dans _LOADED_FT: %s", _LOADED_FT)
         except Exception as exc:
             log.exception("Erreur lors de la fusion du checkpoint fine-tuné : %s", exc)
             _LOADED_FT = None
@@ -403,6 +404,122 @@ def _separate_grouped(
     return label, meta
 
 
+def _box_iou(b1: list[float], b2: list[float]) -> float:
+    x1, y1 = max(b1[0], b2[0]), max(b1[1], b2[1])
+    x2, y2 = min(b1[2], b2[2]), min(b1[3], b2[3])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    a1 = max(0.0, b1[2] - b1[0]) * max(0.0, b1[3] - b1[1])
+    a2 = max(0.0, b2[2] - b2[0]) * max(0.0, b2[3] - b2[1])
+    union = a1 + a2 - inter
+    return float(inter / union) if union > 0 else 0.0
+
+
+def _separate_per_box_ft(
+    rgb: np.ndarray,
+    boxes: list[list[float]],
+    prompt: str = "building",
+    conf_thr: float = 0.25,
+) -> tuple[np.ndarray, list[dict]]:
+    """Mode hybride YOLO -> SAM3 fine-tune :
+    1. Détecte et segmente les bâtiments avec la tête native SAM3 fine-tunée.
+    2. Associe chaque boîte YOLO au masque SAM3 correspondant (IoU max ou overlap).
+    """
+    h, w = rgb.shape[:2]
+    pil = Image.fromarray(rgb)
+    with torch.inference_mode():
+        with torch.autocast(device_type="cuda", enabled=False):
+            state = _PROCESSOR.set_image(pil)
+            out = _PROCESSOR.set_text_prompt(state=state, prompt=prompt)
+
+    masks = out.get("masks")
+    sam_boxes = out.get("boxes")
+    scores = out.get("scores")
+
+    label = np.zeros((h, w), dtype=np.int32)
+    meta: list[dict] = []
+    if masks is None or len(masks) == 0:
+        return label, meta
+
+    sam_masks_np: list[np.ndarray] = []
+    sam_scores: list[float] = []
+    sam_boxes_list: list[list[float] | None] = []
+
+    for i in range(len(masks)):
+        sc = float(scores[i]) if scores is not None and i < len(scores) else 1.0
+        if sc < conf_thr:
+            continue
+        m = _mask_to_numpy(masks[i])
+        if m.shape != (h, w):
+            m = cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
+        if m.sum() == 0:
+            continue
+        sb = sam_boxes[i].tolist() if sam_boxes is not None and i < len(sam_boxes) else None
+        sam_masks_np.append(m)
+        sam_scores.append(sc)
+        sam_boxes_list.append(sb)
+
+    nid = 0
+    assigned_sam_indices: set[int] = set()
+
+    for y_idx, ybox in enumerate(boxes):
+        best_iou = 0.0
+        best_idx = -1
+        for s_idx, sbox in enumerate(sam_boxes_list):
+            if sbox is None or s_idx in assigned_sam_indices:
+                continue
+            iou = _box_iou(ybox, sbox)
+            if iou > best_iou:
+                best_iou = iou
+                best_idx = s_idx
+
+        if best_idx >= 0 and best_iou >= 0.20:
+            assigned_sam_indices.add(best_idx)
+            m = sam_masks_np[best_idx]
+            sc = sam_scores[best_idx]
+            nid += 1
+            label[m > 0] = nid
+            meta.append({
+                "id": nid,
+                "box": ybox,
+                "sam3_box": sam_boxes_list[best_idx],
+                "score": sc,
+                "iou": round(best_iou, 3),
+                "sep": "per_box_ft",
+            })
+        else:
+            x1, y1 = max(0, int(round(ybox[0]))), max(0, int(round(ybox[1])))
+            x2, y2 = min(w, int(round(ybox[2]))), min(h, int(round(ybox[3])))
+            ybox_area = max(1, (x2 - x1) * (y2 - y1))
+
+            best_overlap = 0.0
+            overlap_idx = -1
+            for s_idx, m in enumerate(sam_masks_np):
+                if s_idx in assigned_sam_indices:
+                    continue
+                inter = int(m[y1:y2, x1:x2].sum())
+                overlap = inter / float(ybox_area)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    overlap_idx = s_idx
+
+            if overlap_idx >= 0 and best_overlap >= 0.20:
+                assigned_sam_indices.add(overlap_idx)
+                m = sam_masks_np[overlap_idx]
+                sc = sam_scores[overlap_idx]
+                nid += 1
+                label[m > 0] = nid
+                meta.append({
+                    "id": nid,
+                    "box": ybox,
+                    "sam3_box": sam_boxes_list[overlap_idx],
+                    "score": sc,
+                    "overlap": round(best_overlap, 3),
+                    "sep": "per_box_ft_overlap",
+                })
+
+    return label, meta
+
+
 @app.on_event("startup")
 def startup() -> None:
     _load_model()
@@ -450,6 +567,9 @@ def predict_instances(req: PredictRequest) -> dict[str, Any]:
     try:
         if sep == "grouped" or (not boxes and sep != "per_box"):
             label, meta = _separate_grouped(rgb, req.prompt, req.conf)
+        elif _LOADED_FT and boxes:
+            # Mode fine-tuné SAM3 : associe les boîtes YOLO aux masques SAM3 FT
+            label, meta = _separate_per_box_ft(rgb, boxes, req.prompt, req.conf)
         elif sep == "argmax" and boxes:
             label, meta = _separate_argmax(rgb, boxes, points, req.conf)
         elif boxes:

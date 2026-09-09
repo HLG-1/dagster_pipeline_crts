@@ -41,4 +41,4 @@ sensor:
   poll_interval_s: 30
 
 input:
-  path: data/incoming/03.tif
+  path: data/incoming/zone1_00007_IMG.png
